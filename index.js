@@ -6,9 +6,19 @@ const fs = require('fs');
 const schedule = require('node-schedule');
 
 // ======================================================= //
+
+const _log = (log) => {
+    if(_config.logging) {
+        console.log(log);
+    }
+} 
+
+// ======================================================= //
 // Update local versions from provided updater
 
 const taskUpdate = () => {
+
+    _log('[>] Running update task.');
 
     const reqCheck = new Curl();
     const close_ = reqCheck.close.bind(reqCheck);
@@ -57,6 +67,8 @@ const taskUpdate = () => {
                     if(buffStr.indexOf('Content-Disposition: attachment;') !== -1) {
                         fileName = buffStr.slice(43, -3);
                         buildVersion = fileName.slice(5, -3);
+
+                        _log(`[>] Downloading version ${v} (build ${buildVersion})`);
                     }
                 
                     return size * nmemb;
@@ -83,16 +95,17 @@ const taskUpdate = () => {
 
                 // disable storage since we're writing the file
                 reqDownload.enable(CurlFeature.Raw | CurlFeature.NoStorage);
-
                 reqDownload.on('end', (_code, _body, _headers) => {
                     
                     // check if request was accepted
                     if(_code !== 200) {
 
+                        // need to close these either way
+                        fs.closeSync(fileOut);
+                        reqDownload.close();
+
                         // might need to delete the garbage
-                        fs.unlink(`./builds/${tempFileName}`, (err) => {
-                            if(err) console.log(err);
-                        });
+                        fs.unlink(`./builds/${tempFileName}`, () => {});
                         return;
                     }
 
@@ -106,6 +119,8 @@ const taskUpdate = () => {
                         _versions[v] = buildVersion;
                         fs.writeFile('./versions.json', JSON.stringify(_versions, null, 4), () => {});   
                     }
+
+                    _log('[>] Download completed.\n');
                     reqDownload.close();
                 });
 
@@ -194,6 +209,8 @@ const server = require('http').createServer(function(req, res) {
 
             // ------------------------------------------------------- //
             
+            _log('[<] [check] POST Request received.\n');
+
             // process versions
             const reqVersions = Object.keys(jsonData.versions);
             var newVersions = [];
@@ -234,16 +251,6 @@ const server = require('http').createServer(function(req, res) {
                 return;
             }
 
-            // updater password is set and doesn't match
-            if(_config.password !== "" && jsonData.password !== _config.password) {
-
-                // return an unauthorized status
-                res.writeHead(401); 
-                res.end();
-
-                return;
-            }
-
             // ------------------------------------------------------- //
 
             if(!_versions.hasOwnProperty(jsonData.version)) {
@@ -257,6 +264,8 @@ const server = require('http').createServer(function(req, res) {
 
             // ------------------------------------------------------- //
 
+            _log('[<] [download] POST Request received.');
+
             const file = 'build' + _versions[jsonData.version] + '.7z';
             const path = './builds/' + file;
             const fileSize = fs.statSync(path).size;
@@ -267,7 +276,8 @@ const server = require('http').createServer(function(req, res) {
                 'Content-Disposition' : 'attachment; filename=' + file,
                 'Content-Length' : fileSize
             });
-
+            
+            _log(`[>] [download] Sending version ${jsonData.version} (build ${_versions[jsonData.version]}).\n`);
             const readStream = fs.createReadStream(path);
             readStream.pipe(res);
         }
