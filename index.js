@@ -9,7 +9,7 @@ const schedule = require('node-schedule');
 // Update local versions from provided updater
 
 const taskUpdate = () => {
-    console.log(1);
+
     const reqCheck = new Curl();
     const close_ = reqCheck.close.bind(reqCheck);
 
@@ -21,8 +21,13 @@ const taskUpdate = () => {
         })
     }]);
 
+    // ------------------------------------------------------- //
+
     reqCheck.on('error', close_);
     reqCheck.on('end', (_code, _body, _headers) => {
+
+        // check if request was accepted
+        if(_code !== 200) return;
 
         if(_body.length > 0) {
             const newVersions = _body.split('|');
@@ -80,6 +85,17 @@ const taskUpdate = () => {
                 reqDownload.enable(CurlFeature.Raw | CurlFeature.NoStorage);
 
                 reqDownload.on('end', (_code, _body, _headers) => {
+                    
+                    // check if request was accepted
+                    if(_code !== 200) {
+
+                        // might need to delete the garbage
+                        fs.unlink(`./builds/${tempFileName}`, (err) => {
+                            if(err) console.log(err);
+                        });
+                        return;
+                    }
+
                     fs.closeSync(fileOut);
 
                     // Rename the file if header found
@@ -103,8 +119,9 @@ const taskUpdate = () => {
     reqCheck.perform();
 }
 
-// run this function everday
+// run this function everday and on startup
 schedule.scheduleJob('0 0 * * *', taskUpdate);
+taskUpdate();
 
 // ======================================================= //
 // Routes
