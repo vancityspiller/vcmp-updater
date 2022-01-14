@@ -3,101 +3,108 @@ const _versions = require('./versions.json');
 
 const { Curl, CurlFeature } = require('node-libcurl');
 const fs = require('fs');
+const schedule = require('node-schedule');
 
 // ======================================================= //
 // Update local versions from provided updater
 
-const reqCheck = new Curl();
-const close_ = reqCheck.close.bind(reqCheck);
+const taskUpdate = () => {
+    console.log(1);
+    const reqCheck = new Curl();
+    const close_ = reqCheck.close.bind(reqCheck);
 
-reqCheck.setOpt(Curl.option.URL, `${_config.updater}/check`);
-reqCheck.setOpt(Curl.option.HTTPPOST, [{ 
-    name: 'json', contents: JSON.stringify({
-        password: '',
-        versions: _versions
-    })
-}]);
+    reqCheck.setOpt(Curl.option.URL, `${_config.updater}/check`);
+    reqCheck.setOpt(Curl.option.HTTPPOST, [{ 
+        name: 'json', contents: JSON.stringify({
+            password: '',
+            versions: _versions
+        })
+    }]);
 
-reqCheck.on('error', close_);
-reqCheck.on('end', (_code, _body, _headers) => {
+    reqCheck.on('error', close_);
+    reqCheck.on('end', (_code, _body, _headers) => {
 
-    if(_body.length > 0) {
-        const newVersions = _body.split('|');
+        if(_body.length > 0) {
+            const newVersions = _body.split('|');
 
-        newVersions.forEach((v) => {
+            newVersions.forEach((v) => {
 
-            const reqDownload = new Curl();
-            const close = reqDownload.close.bind(reqDownload);
+                const reqDownload = new Curl();
+                const close = reqDownload.close.bind(reqDownload);
 
-            reqDownload.setOpt(Curl.option.URL, `${_config.updater}/download`);
-            reqDownload.setOpt(Curl.option.HTTPPOST, [{ 
-                name: 'json', contents: JSON.stringify({
-                    password: '',
-                    version: v
-                })
-            }]);
+                reqDownload.setOpt(Curl.option.URL, `${_config.updater}/download`);
+                reqDownload.setOpt(Curl.option.HTTPPOST, [{ 
+                    name: 'json', contents: JSON.stringify({
+                        password: '',
+                        version: v
+                    })
+                }]);
 
-            reqDownload.on('error', close);
+                reqDownload.on('error', close);
 
-            // ------------------------------------------------------- //
+                // ------------------------------------------------------- //
 
-            let fileName = null, buildVersion = null;
-            reqDownload.setOpt(Curl.option.HEADERFUNCTION, function(buff, size, nmemb) {
-                
-                const buffStr = buff.toString();
-
-                if(buffStr.indexOf('Content-Disposition: attachment;') !== -1) {
-                    fileName = buffStr.slice(43, -3);
-                    buildVersion = fileName.slice(5, -3);
-                }
-            
-                return size * nmemb;
-            });
-
-            // ------------------------------------------------------- //
-            
-            const tempFileName = new Date().getTime();
-            const fileOut = fs.openSync(`./builds/${tempFileName}`, 'w+');
-
-            reqDownload.setOpt(Curl.option.WRITEFUNCTION, (buff, nmemb, size) => {
-                let written = 0;
-                if (fileOut) {
-                    written = fs.writeSync(fileOut, buff, 0, nmemb * size);
-                } 
-                else {
-                    process.stdout.write(buff.toString());
-                    written = size * nmemb;
-                }
-                return written;
-            });
-
-            // ------------------------------------------------------- //
-
-            // disable storage since we're writing the file
-            reqDownload.enable(CurlFeature.Raw | CurlFeature.NoStorage);
-
-            reqDownload.on('end', (_code, _body, _headers) => {
-                fs.closeSync(fileOut);
-
-                // Rename the file if header found
-                if(fileName !== null) {
-                    fs.rename(`./builds/${tempFileName}`, `./builds/${fileName}`, () => {});
+                let fileName = null, buildVersion = null;
+                reqDownload.setOpt(Curl.option.HEADERFUNCTION, function(buff, size, nmemb) {
                     
-                    // update our version catalog
-                    _versions[v] = buildVersion;
-                    fs.writeFile('./versions.json', JSON.stringify(_versions, null, 4), () => {});   
-                }
-                reqDownload.close();
+                    const buffStr = buff.toString();
+
+                    if(buffStr.indexOf('Content-Disposition: attachment;') !== -1) {
+                        fileName = buffStr.slice(43, -3);
+                        buildVersion = fileName.slice(5, -3);
+                    }
+                
+                    return size * nmemb;
+                });
+
+                // ------------------------------------------------------- //
+                
+                const tempFileName = new Date().getTime();
+                const fileOut = fs.openSync(`./builds/${tempFileName}`, 'w+');
+
+                reqDownload.setOpt(Curl.option.WRITEFUNCTION, (buff, nmemb, size) => {
+                    let written = 0;
+                    if (fileOut) {
+                        written = fs.writeSync(fileOut, buff, 0, nmemb * size);
+                    } 
+                    else {
+                        process.stdout.write(buff.toString());
+                        written = size * nmemb;
+                    }
+                    return written;
+                });
+
+                // ------------------------------------------------------- //
+
+                // disable storage since we're writing the file
+                reqDownload.enable(CurlFeature.Raw | CurlFeature.NoStorage);
+
+                reqDownload.on('end', (_code, _body, _headers) => {
+                    fs.closeSync(fileOut);
+
+                    // Rename the file if header found
+                    if(fileName !== null) {
+                        fs.rename(`./builds/${tempFileName}`, `./builds/${fileName}`, () => {});
+                        
+                        // update our version catalog
+                        _versions[v] = buildVersion;
+                        fs.writeFile('./versions.json', JSON.stringify(_versions, null, 4), () => {});   
+                    }
+                    reqDownload.close();
+                });
+
+                // ------------------------------------------------------- //
+
+                reqDownload.perform();
             });
+        }
+    });
 
-            // ------------------------------------------------------- //
+    reqCheck.perform();
+}
 
-            reqDownload.perform();
-        });
-    }
-});
-
-reqCheck.perform();
+// run this function everday
+schedule.scheduleJob('0 0 * * *', taskUpdate);
 
 // ======================================================= //
 // Routes
@@ -245,7 +252,7 @@ const server = require('http').createServer(function(req, res) {
             });
 
             const readStream = fs.createReadStream(path);
-            //readStream.pipe(res);
+            readStream.pipe(res);
         }
 
         // ======================================================= //
@@ -260,3 +267,5 @@ const server = require('http').createServer(function(req, res) {
 });
 
 server.listen(_config.port);
+
+// ======================================================= //
