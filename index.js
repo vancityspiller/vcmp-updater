@@ -1,13 +1,5 @@
-const _config = {
-    password: "",
-    port: 8000
-}
-
-// ------------------------------------------------------- //
-
-const _versions = {
-    "04rel006": "5FE83BB4"
-}
+const _config = require('./config.json');
+const _versions = require('./versions.json');
 
 // ======================================================= //
 
@@ -30,7 +22,7 @@ const server = require('http').createServer(function(req, res) {
         const jsonStart = reqBody.indexOf('"json"'), jsonEnd = reqBody.lastIndexOf("}");
 
         // no data provided?
-        if(jsonStart == -1 || jsonEnd == -1)
+        if(jsonStart === -1 || jsonEnd === -1)
         {
             // return a bad request status
             res.writeHead(400); 
@@ -55,7 +47,7 @@ const server = require('http').createServer(function(req, res) {
         }
 
         // updater password is set and doesn't match
-        if(_config.password != "" && jsonData.password != _config.password) {
+        if(_config.password !== "" && jsonData.password !== _config.password) {
 
             // return an unauthorized status
             res.writeHead(401); 
@@ -121,7 +113,7 @@ const server = require('http').createServer(function(req, res) {
             }
 
             // updater password is set and doesn't match
-            if(_config.password != "" && jsonData.password != _config.password) {
+            if(_config.password !== "" && jsonData.password !== _config.password) {
 
                 // return an unauthorized status
                 res.writeHead(401); 
@@ -140,6 +132,8 @@ const server = require('http').createServer(function(req, res) {
 
                 return;
             }
+
+            // ------------------------------------------------------- //
 
             const file = 'build' + _versions[jsonData.version] + '.7z';
             const path = './builds/' + file;
