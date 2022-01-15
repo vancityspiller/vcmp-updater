@@ -1,17 +1,52 @@
 const _config = require('./config.json');
 const _versions = require('./versions.json');
 
+// ======================================================= //
+
+console.log('=======================================\n');
+console.log(`Listening on port: ${_config.port}\n`);
+console.log(`Password: ${_config.password.trim().length > 0 ? _config.password : '[unset]'}`);
+console.log(`Updater: ${_config.updater.trim().length > 0 ? _config.updater : '[disabled]'}\n`);
+console.log('=======================================\n');
+
+// ======================================================= //
+// Dependencies
+
 const { Curl, CurlFeature } = require('node-libcurl');
 const fs = require('fs');
 const schedule = require('node-schedule');
 
 // ======================================================= //
+// Logging 
 
 const _log = (log) => {
     if(_config.logging) {
+
+        const now_ = new Date();
+        log = `[${now_.getHours()}:${now_.getMinutes()}] ${log}\n`;
+
         console.log(log);
+        fs.appendFile('updater_log.txt', log, () => {});
     }
 } 
+
+const taskLog = () => {
+
+    if(_config.logging) {
+
+        const monthNames = ["January", "February", "March", "April", "May", "June",
+            "July", "August", "September", "October", "November", "December"];
+
+        const now_ = new Date();
+        const log = `========== ${now_.getDate()} ${monthNames[now_.getMonth()]} ==========\n`;
+
+        console.log(log);
+        fs.appendFile('updater_log.txt', log, () => {});
+    }
+}
+
+taskLog();
+schedule.scheduleJob('0 0 * *', taskLog);
 
 // ======================================================= //
 // Update local versions from provided updater
@@ -67,8 +102,6 @@ const taskUpdate = () => {
                     if(buffStr.toLowerCase().indexOf('content-disposition: attachment;') !== -1) {
                         fileName = buffStr.slice(43, -3);
                         buildVersion = fileName.slice(5, -3);
-
-                        _log(`[>] Downloading version ${v} (build ${buildVersion})`);
                     }
                 
                     return size * nmemb;
@@ -98,7 +131,8 @@ const taskUpdate = () => {
                 reqDownload.on('end', (_code, _body, _headers) => {
                     
                     // check if request was accepted
-                    if(_code !== 200) {
+                    // or if couldn't find filename in headers
+                    if(_code !== 200 || fileName === null) {
 
                         // need to close these either way
                         fs.closeSync(fileOut);
@@ -106,21 +140,19 @@ const taskUpdate = () => {
 
                         // might need to delete the garbage
                         fs.unlink(`./builds/${tempFileName}`, () => {});
+
+                        _log(`[x] Could not download version ${v} successfully.`);
                         return;
                     }
 
                     fs.closeSync(fileOut);
+                    fs.rename(`./builds/${tempFileName}`, `./builds/${fileName}`, () => {});
+                    
+                    // update our version catalog
+                    _versions[v] = buildVersion;
+                    fs.writeFile('./versions.json', JSON.stringify(_versions, null, 4), () => {});   
 
-                    // Rename the file if header found
-                    if(fileName !== null) {
-                        fs.rename(`./builds/${tempFileName}`, `./builds/${fileName}`, () => {});
-                        
-                        // update our version catalog
-                        _versions[v] = buildVersion;
-                        fs.writeFile('./versions.json', JSON.stringify(_versions, null, 4), () => {});   
-                    }
-
-                    _log('[>] Download completed.\n');
+                    _log(`[>] Downloaded version ${v} (build ${buildVersion}).`);
                     reqDownload.close();
                 });
 
@@ -133,8 +165,6 @@ const taskUpdate = () => {
 
     reqCheck.perform();
 }
-
-// ======================================================= //
 
 // run this function everday and on startup
 // only if updater url is set
@@ -215,7 +245,7 @@ const server = require('http').createServer(function(req, res) {
 
             // ------------------------------------------------------- //
             
-            _log('[<] [check] POST Request received.\n');
+            _log('[<] [check] POST Request received.');
 
             // process versions
             const reqVersions = Object.keys(jsonData.versions);
@@ -270,8 +300,6 @@ const server = require('http').createServer(function(req, res) {
 
             // ------------------------------------------------------- //
 
-            _log('[<] [download] POST Request received.');
-
             const file = 'build' + _versions[jsonData.version] + '.7z';
             const path = './builds/' + file;
             const fileSize = fs.statSync(path).size;
@@ -283,7 +311,7 @@ const server = require('http').createServer(function(req, res) {
                 'Content-Length' : fileSize
             });
             
-            _log(`[>] [download] Sending version ${jsonData.version} (build ${_versions[jsonData.version]}).\n`);
+            _log(`[>] [download] Sending version ${jsonData.version} (build ${_versions[jsonData.version]}).`);
             const readStream = fs.createReadStream(path);
             readStream.pipe(res);
         }
