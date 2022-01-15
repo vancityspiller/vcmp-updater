@@ -1,12 +1,15 @@
 const _config = require('./config.json');
 const _versions = require('./versions.json');
 
+const unknownVersions = {};
+const updaterEnabled = _config.updater.trim().length > 0;
+
 // ======================================================= //
 
 console.log('=======================================\n');
 console.log(`Listening on port: ${_config.port}\n`);
 console.log(`Password: ${_config.password.trim().length > 0 ? _config.password : '[unset]'}`);
-console.log(`Updater: ${_config.updater.trim().length > 0 ? _config.updater : '[disabled]'}\n`);
+console.log(`Updater: ${updaterEnabled ? _config.updater : '[disabled]'}\n`);
 console.log('=======================================\n');
 
 // ======================================================= //
@@ -62,7 +65,10 @@ const taskUpdate = () => {
     reqCheck.setOpt(Curl.option.HTTPPOST, [{ 
         name: 'json', contents: JSON.stringify({
             password: '',
-            versions: _versions
+            versions: {
+                ...unknownVersions,
+                ..._versions
+            }
         })
     }]);
 
@@ -152,6 +158,13 @@ const taskUpdate = () => {
                     _versions[v] = buildVersion;
                     fs.writeFile('./versions.json', JSON.stringify(_versions, null, 4), () => {});   
 
+                    // check if it was listed as an unknown version earlier
+                    if(unknownVersions.hasOwnProperty(v)) {
+
+                        // if so, then remove it
+                        delete unknownVersions[v];
+                    }
+
                     _log(`[>] Downloaded version ${v} (build ${buildVersion}).`);
                     reqDownload.close();
                 });
@@ -168,7 +181,7 @@ const taskUpdate = () => {
 
 // run this function everday and on startup
 // only if updater url is set
-if(_config.updater.trim().length > 0) {
+if(updaterEnabled) {
 
     schedule.scheduleJob('0 0 * * *', taskUpdate);
     taskUpdate();
@@ -180,7 +193,13 @@ if(_config.updater.trim().length > 0) {
 const server = require('http').createServer(function(req, res) {
 
     // only POST requests
-    if(req.method !== 'POST') return;
+    if(req.method !== 'POST') {
+        
+        res.writeHead(404);
+        res.end();
+
+        return;
+    }
 
     var reqBody = '';
     req.on('data', function(chunk) {
@@ -254,7 +273,18 @@ const server = require('http').createServer(function(req, res) {
             reqVersions.forEach(v => {
 
                 // we don't have that version
-                if(!_versions.hasOwnProperty(v)) return;
+                if(!_versions.hasOwnProperty(v)) {
+                    
+                    if(!unknownVersions.hasOwnProperty(v)) {
+                        _log(`[<] Unknown version ${v} encountered.`);
+                        
+                        // mark that version as unknown
+                        unknownVersions[v] = '00000001';
+                        if(updaterEnabled) taskUpdate();
+                    }
+
+                    return;
+                };
 
                 // compare the build version
                 const v1 = parseInt(jsonData.versions[v], 16), v2 = parseInt(_versions[v], 16);
@@ -289,11 +319,20 @@ const server = require('http').createServer(function(req, res) {
 
             // ------------------------------------------------------- //
 
+            // we dn't have that version yet
             if(!_versions.hasOwnProperty(jsonData.version)) {
 
                 // return 404
                 res.writeHead(404); 
                 res.end();
+
+                if(!unknownVersions.hasOwnProperty(jsonData.version)) {
+                    _log(`[<] Unknown version ${jsonData.version} encountered.`);
+                    
+                    // mark that version as unknown
+                    unknownVersions[jsonData.version] = '00000001';
+                    if(updaterEnabled) taskUpdate();
+                }
 
                 return;
             }
