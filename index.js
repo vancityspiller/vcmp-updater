@@ -64,7 +64,7 @@ const taskUpdate = () => {
                     
                     const buffStr = buff.toString();
 
-                    if(buffStr.indexOf('Content-Disposition: attachment;') !== -1) {
+                    if(buffStr.toLowerCase().indexOf('content-disposition: attachment;') !== -1) {
                         fileName = buffStr.slice(43, -3);
                         buildVersion = fileName.slice(5, -3);
 
@@ -134,9 +134,15 @@ const taskUpdate = () => {
     reqCheck.perform();
 }
 
+// ======================================================= //
+
 // run this function everday and on startup
-schedule.scheduleJob('0 0 * * *', taskUpdate);
-taskUpdate();
+// only if updater url is set
+if(_config.updater.trim().length > 0) {
+
+    schedule.scheduleJob('0 0 * * *', taskUpdate);
+    taskUpdate();
+}
 
 // ======================================================= //
 // Routes
