@@ -192,12 +192,29 @@ if(updaterEnabled) {
 
 const server = require('http').createServer(function(req, res) {
 
-    // only POST requests
-    if(req.method !== 'POST') {
+    // if GET, display something readable to user
+    if(req.method === 'GET') {
         
+        res.end(`
+        <!DOCTYPE html>
+        <html>
+            <head>
+                <title>VC:MP Updater</title>
+            </head>
+            <body>
+                This is an alternative update server. <br />
+                Put this URL in your browser's updater URL to use this to fetch VC:MP versions. <br /><br />
+            </body>
+        </html>
+        `)
+
+        return;
+    }
+
+    else if(req.method !== 'POST') {
         res.writeHead(404);
         res.end();
-
+        
         return;
     }
 
